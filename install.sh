@@ -67,7 +67,7 @@ echo "[4/8] Writing Xray config..."
 cat <<EOF > "$CONFIG"
 {
   "log": {
-    "loglevel": "info"
+    "loglevel": "warning"
   },
   "routing": {
     "domainStrategy": "AsIs",
