@@ -272,34 +272,39 @@ net.core.default_qdisc=fq
 net.ipv4.tcp_congestion_control=bbr
 EOF
 
-  # apply only our sysctl file to avoid affecting other system settings
   sysctl -p "$CONF" >/dev/null 2>&1 || true
 }
 
-echo "Checking BBR support..."
+enable_bbr_step() {
+  echo "Checking BBR support..."
 
-if [[ "$(current_cc)" == "bbr" && "$(current_qdisc)" == "fq" ]]; then
-  echo "BBR already enabled (congestion_control=bbr, qdisc=fq)."
-  exit 0
-fi
+  if [[ "$(current_cc)" == "bbr" && "$(current_qdisc)" == "fq" ]]; then
+    echo "BBR already enabled (congestion_control=bbr, qdisc=fq)."
+    return 0
+  fi
 
-if have_bbr; then
-  echo "BBR is available. Enabling..."
-else
-  echo "BBR is not listed as available. Attempting to enable it anyway..."
-fi
+  if have_bbr; then
+    echo "BBR is available. Enabling..."
+  else
+    echo "BBR is not listed as available. Attempting to enable it anyway..."
+  fi
 
-apply_bbr
+  apply_bbr
 
-cc="$(current_cc)"
-qd="$(current_qdisc)"
-if [[ "$cc" == "bbr" && "$qd" == "fq" ]]; then
-  echo "BBR enabled (congestion_control=bbr, qdisc=fq)."
-else
-  echo "Failed to enable BBR."
-  echo "congestion_control=$cc"
-  echo "qdisc=$qd"
-fi
+  local cc qd
+  cc="$(current_cc)"
+  qd="$(current_qdisc)"
+
+  if [[ "$cc" == "bbr" && "$qd" == "fq" ]]; then
+    echo "BBR enabled (congestion_control=bbr, qdisc=fq)."
+  else
+    echo "Failed to enable BBR."
+    echo "congestion_control=$cc"
+    echo "qdisc=$qd"
+  fi
+}
+
+enable_bbr_step
 
 ############################################
 # Step 9: Done
