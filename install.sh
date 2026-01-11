@@ -6,7 +6,7 @@ set -euo pipefail
 ############################################
 
 if [[ $EUID -ne 0 ]]; then
-  echo "❌ Please run as root (sudo -i)"
+  echo "Please run as root (sudo -i)"
   exit 1
 fi
 
@@ -26,7 +26,7 @@ KEYS="$XRAY_DIR/.keys"
 # Step 1: Update system & install deps
 ############################################
 
-echo "[1/8] Updating system and installing dependencies..."
+echo "[1/9] Updating system and installing dependencies..."
 
 apt update && apt upgrade -y
 apt install -y curl jq qrencode ufw openssl
@@ -35,7 +35,7 @@ apt install -y curl jq qrencode ufw openssl
 # Step 2: Install Xray
 ############################################
 
-echo "[2/8] Installing Xray..."
+echo "[2/9] Installing Xray..."
 
 bash -c "$(curl -4 -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
 
@@ -43,7 +43,7 @@ bash -c "$(curl -4 -L https://github.com/XTLS/Xray-install/raw/main/install-rele
 # Step 3: Generate Reality keys
 ############################################
 
-echo "[3/8] Generating Reality keys..."
+echo "[3/9] Generating Reality keys..."
 
 mkdir -p "$XRAY_DIR"
 rm -f "$KEYS"
@@ -62,7 +62,7 @@ shortsid="$(awk -F': ' '/^shortsid:/ {print $2}' "$KEYS")"
 # Step 4: Create config.json
 ############################################
 
-echo "[4/8] Writing Xray config..."
+echo "[4/9] Writing Xray config..."
 
 cat <<EOF > "$CONFIG"
 {
@@ -130,7 +130,7 @@ EOF
 # Step 5: Enable & start Xray
 ############################################
 
-echo "[5/8] Starting Xray..."
+echo "[5/9] Starting Xray..."
 
 systemctl daemon-reload
 systemctl enable xray
@@ -140,7 +140,7 @@ systemctl restart xray
 # Step 6: Install helper scripts
 ############################################
 
-echo "[6/8] Installing helper scripts..."
+echo "[6/9] Installing helper scripts..."
 
 ### newuser
 cat <<'EOF' > /usr/local/bin/newuser
@@ -240,20 +240,75 @@ chmod +x /usr/local/bin/mainuser
 # Step 7: Firewall
 ############################################
 
-echo "[7/8] Configuring firewall..."
+echo "[7/9] Configuring firewall..."
 
 ufw allow 22/tcp
 ufw allow 443/tcp
 ufw --force enable
 
 ############################################
-# Step 8: Done
+# Step 8: BBR
+############################################
+
+echo "[8/9] Enabling BBR..."
+
+CONF="/etc/sysctl.d/99-bbr.conf"
+
+have_bbr() {
+  sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null | grep -qw bbr
+}
+
+current_cc() { sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || true; }
+current_qdisc() { sysctl -n net.core.default_qdisc 2>/dev/null || true; }
+
+apply_bbr() {
+  modprobe tcp_bbr 2>/dev/null || true
+
+  sysctl -w net.core.default_qdisc=fq >/dev/null 2>&1 || true
+  sysctl -w net.ipv4.tcp_congestion_control=bbr >/dev/null 2>&1 || true
+
+  cat >"$CONF" <<'EOF'
+net.core.default_qdisc=fq
+net.ipv4.tcp_congestion_control=bbr
+EOF
+
+  # apply only our sysctl file to avoid affecting other system settings
+  sysctl -p "$CONF" >/dev/null 2>&1 || true
+}
+
+echo "Checking BBR support..."
+
+if [[ "$(current_cc)" == "bbr" && "$(current_qdisc)" == "fq" ]]; then
+  echo "BBR already enabled (congestion_control=bbr, qdisc=fq)."
+  exit 0
+fi
+
+if have_bbr; then
+  echo "BBR is available. Enabling..."
+else
+  echo "BBR is not listed as available. Attempting to enable it anyway..."
+fi
+
+apply_bbr
+
+cc="$(current_cc)"
+qd="$(current_qdisc)"
+if [[ "$cc" == "bbr" && "$qd" == "fq" ]]; then
+  echo "BBR enabled (congestion_control=bbr, qdisc=fq)."
+else
+  echo "Failed to enable BBR."
+  echo "congestion_control=$cc"
+  echo "qdisc=$qd"
+fi
+
+############################################
+# Step 9: Done
 ############################################
 
 ip="$(ip -4 route get 1 | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1);exit}}')"
 
 echo "========================================="
-echo " ✅ Installation complete"
+echo " Installation complete"
 echo " Server IP: $ip"
 echo ""
 echo " Main user:"
